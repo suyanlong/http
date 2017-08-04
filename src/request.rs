@@ -57,7 +57,7 @@ use std::any::Any;
 use std::fmt;
 
 use {Uri, Error, Result, HttpTryFrom, Extensions};
-use header::{HeaderMap, HeaderValue, HeaderMapKey};
+use header::{HeaderMap, HeaderName, HeaderValue};
 use method::Method;
 use version::Version;
 
@@ -369,7 +369,7 @@ impl<T> Request<T> {
     /// # use http::*;
     /// # use http::header::*;
     /// let mut request: Request<()> = Request::default();
-    /// request.headers_mut().insert("hello", HeaderValue::from_static("world"));
+    /// request.headers_mut().insert(HOST, HeaderValue::from_static("world"));
     /// assert!(!request.headers().is_empty());
     /// ```
     #[inline]
@@ -607,14 +607,19 @@ impl Builder {
     ///     .unwrap();
     /// ```
     pub fn header<K, V>(&mut self, key: K, value: V) -> &mut Builder
-        where K: HeaderMapKey,
+        where HeaderName: HttpTryFrom<K>,
               HeaderValue: HttpTryFrom<V>
     {
         if let Some(head) = head(&mut self.head, &self.err) {
-            match HeaderValue::try_from(value) {
-                Ok(value) => { head.headers.append(key, value); }
+            match HeaderName::try_from(key) {
+                Ok(key) => {
+                    match HeaderValue::try_from(value) {
+                        Ok(value) => { head.headers.append(key, value); }
+                        Err(e) => self.err = Some(e.into()),
+                    }
+                },
                 Err(e) => self.err = Some(e.into()),
-            }
+            };
         }
         self
     }
@@ -646,7 +651,7 @@ impl Builder {
     /// ```
     pub fn headers<I, K, V>(&mut self, headers: I) -> &mut Builder
         where I: IntoIterator<Item = (K, V)>,
-              K: HeaderMapKey,
+              HeaderName: HttpTryFrom<K>,
               HeaderValue: HttpTryFrom<V>,
     {
         for (key, value) in headers {
